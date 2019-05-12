@@ -1,0 +1,145 @@
+# Read FASTQ files
+library(Rsubread)
+fastq.files <- list.files(path = "./data", pattern = ".fastq.gz$", full.names = TRUE)
+fastq.files
+
+#Generate index file in the WD using the command 
+buildindex(basename = "<name>", reference = "<ref>")
+
+#Align reads to reference genome
+args(align)
+bam.files <- list.files(path = "./data", pattern = ".BAM$", full.names = TRUE)
+bam.files
+
+# Extract quality scores
+qs <- qualityScores(filename="data/SRR1552450.fastq.gz",nreads=100)
+boxplot(qs)
+
+#Feature counting
+fc <- featureCounts(bam.files, annot.inbuilt="<name>")
+
+library(edgeR)
+library(limma)
+library(Glimma)
+library(gplots)
+library(org.Mm.eg.db)
+library(RColorBrewer)
+
+# Read the data into R
+seqdata <- read.delim("<filename>", stringsAsFactors = FALSE)
+
+#Reformat the data such that only read counts remain
+countdata <- <reformatted seqdata
+
+# Obtain CPMs
+myCPM <- cpm(countdata)
+# Which values in myCPM are greater than 0.5?
+thresh <- myCPM > 0.5
+# we would like to keep genes that have at least 2 TRUES in each row of thresh
+keep <- rowSums(thresh) >= 2
+# Subset the rows of countdata to keep the more highly expressed genes
+counts.keep <- countdata[keep,]
+
+#Convert counts to DGElist object
+dgeObj <- DGEList(counts.keep)
+
+# Get log2 counts per million
+logcounts <- cpm(dgeObj,log=TRUE)
+# Check distributions of samples using boxplots
+boxplot(logcounts, xlab="", ylab="Log2 counts per million",las=2)
+# Let's add a blue horizontal line that corresponds to the median logCPM
+abline(h=median(logcounts),col="blue")
+title("Boxplots of logCPMs (unnormalised)")
+
+# We estimate the variance for each row in the logcounts matrix
+var_genes <- apply(logcounts, 1, var)
+head(var_genes)
+# Get the gene names for the top 500 most variable genes
+select_var <- names(sort(var_genes, decreasing=TRUE))[1:500]
+head(select_var)
+# Subset logcounts matrix
+highly_variable_lcpm <- logcounts[select_var,]
+dim(highly_variable_lcpm)
+head(highly_variable_lcpm)
+
+# Plot the heatmap
+heatmap.2(highly_variable_lcpm, 
+          col=rev(morecols(50)),
+          trace="column", 
+          main="Top 500 most variable genes across samples",
+          ColSideColors=col.cell,scale="row")
+
+#Estimate dispersion
+dgeObj <- estimateCommonDisp(dgeObj)
+dgeObj <- estimateGLMTrendedDisp(dgeObj)
+dgeObj <- estimateTagwiseDisp(dgeObj)
+
+# Fit the linear model
+fit <- glmFit(dgeObj, design)
+names(fit)
+
+library(ggplot2)
+ggplot(results, aes(x = logCPM, y=logFC,col=FDR < 0.05)) + geom_point()
+
+#Load file containing RNAdata and Definite ligase list
+
+#Extract data for E3 ligases
+e3_ligase <- subset(RNA_data, ext_gene %in% Definite_Ligase_List$`Gene Symbol`)
+
+#Build dataframe containing log-transformed values
+
+#Function to change Inf values to NA
+cf_DFinf2NA <- function(x)
+{
+  for (i in 1:ncol(x)){
+    x[,i][is.infinite(x[,i])] = NA
+  }
+  return(x)
+}
+
+#Convert Inf values to NA
+log_e3 <- cf_DFinf2NA(log_e3)
+
+#Remove all NA, NaN, and Inf values from dataframe
+log_e3 <- na.omit(log_e3)
+
+#Keep only those e3 ligases that have log2FC >= 5 in either of the samples
+log_e3.keep <- subset.data.frame(log_e3, abs(log_e3[,11])>=5 | abs(log_e3[,12])>=5)
+log_e3.replicate <- subset.data.frame(log_e3, abs(log_e3[,11]) >= 2 & abs(log_e3[,12]) >=2)
+
+#Make boxplot showing the expression levels of replicate set
+boxplot(log_e3$log_P4_S1,log_e3$log_P7_S2,log_e3$log_P4_S3,log_e3$log_P7_S4, horizontal = TRUE, main = "Uncommitted vs. Committed", at = c(1,2,4,5), names = c("P4","P7","P4","P7"), col = c("orange","red"), notch = TRUE)
+
+boxplot(log_e3.replicate$log_P4_S1,log_e3.replicate$log_P7_S2,log_e3.replicate$log_P4_S3,log_e3.replicate$log_P7_S4, main = "Uncommitted versus Committed ", at= c(1,2,4,5), names = c("P4", "P7", "P4", "P7"),las = 2, col = c("orange", "red"), horizontal = TRUE)
+
+#Set color palette
+my_palette <- colorRampPalette(c("white", "blue"))(n = 299)
+
+#Scale and generate heatmap of keep data
+log_e3.keep.scaled <- as.matrix(scale(log_e3.keep[,2:8]))
+heatmap.2(log_e3.keep.scaled, Colv = NA , scale='none', col = my_palette, density.info = "none", trace = "none", dendrogram = c("row"),
+          labRow = FALSE, labCol = FALSE)
+
+#Scale and generate heatmap of replicate data
+log_e3.replicate.scaled <- as.matrix(scale(log_e3.replicate[,2:8]))
+heatmap.2(log_e3.replicate.scaled, Colv = NA , scale='none', col = my_palette, density.info = "none", trace = "none", dendrogram = c("row"),
+          labRow = FALSE)
+
+      
+#Choose downregulated genes
+log_e3.keep.down_reg <- subset.data.frame(log_e3.keep, log_e3.keep[,11] <= 0 & log_e3.keep[,12] <=0)
+log_e3.replicate.down_reg <- subset.data.frame(log_e3.replicate, log_e3.replicate[,11] <= 0 & log_e3.replicate[,12] <=0)
+
+#Choose upregulated genes
+log_e3.keep.up_reg <- subset.data.frame(log_e3.keep, log_e3.keep[,11] >= 0 & log_e3.keep[,12] >=0)
+log_e3.replicate.up_reg <- subset.data.frame(log_e3.replicate, log_e3.replicate[,11] > 0 & log_e3.replicate[,12] >0)
+
+#Choose top 20 upregulated and 20 downregulated genes
+
+top_20 <- log_e3.replicate.up_reg[order(-log_e3.replicate.up_reg$log2FC_1),][1:20,]
+top_20 <- rbind(top_20,log_e3.replicate.down_reg);
+
+e3_ligase_top20 <- subset(e3_ligase, target_id %in% top_20$target_ID)
+top_20.scaled <- as.matrix(scale(e3_ligase_top20[,2:8]))
+heatmap.2(top_20.scaled,Colv = NA, scale='none', density.info = "none", trace = "none", dendrogram = c("row"),
+        labCol = FALSE, col = my_palette, labRow = top_20$ext_gene, Rowv = NULL)
